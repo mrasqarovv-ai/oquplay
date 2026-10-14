@@ -1,0 +1,151 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum Role {
+  TEACHER
+  STUDENT
+}
+enum GameStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+model User {
+  id           String @id @default(uuid())
+  email        String @unique
+  name         String
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+  sessions     AuthSession[]
+  games        Game[]
+  attempts     Attempt[]
+  jobs         GenerationJob[]
+}
+model AuthSession {
+  id        String @id @default(uuid())
+  tokenHash String @unique
+  userId    String?
+  user      User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  attempts  Attempt[]
+  @@index([expiresAt])
+  @@index([userId])
+}
+model Game {
+  id           String @id @default(uuid())
+  ownerId      String
+  owner        User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title        String
+  subject      String
+  gameType     String
+  status       GameStatus @default(DRAFT)
+  archived     Boolean @default(false)
+  draft        Json
+  source       String
+  timeLimitSec Int?
+  isDemo       Boolean @default(false)
+  revision     Int @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  versions     GameVersion[]
+  shares       ShareSession[]
+  @@index([ownerId, archived, updatedAt])
+}
+model GameVersion {
+  id           String @id @default(uuid())
+  gameId       String
+  game         Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  number       Int
+  content      Json
+  source       String
+  timeLimitSec Int?
+  isDemo       Boolean
+  createdAt    DateTime @default(now())
+  tasks        Task[]
+  shares       ShareSession[]
+  attempts     Attempt[]
+  @@unique([gameId, number])
+}
+model Task {
+  id        String @id @default(uuid())
+  versionId String
+  version   GameVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  contentId String
+  position  Int
+  content   Json
+  answers   Answer[]
+  @@unique([versionId, contentId])
+  @@unique([versionId, position])
+}
+model ShareSession {
+  id        String @id @default(uuid())
+  code      String @unique
+  gameId    String
+  game      Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  versionId String
+  version   GameVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  active    Boolean @default(true)
+  createdAt DateTime @default(now())
+  attempts  Attempt[]
+  @@index([gameId, active])
+}
+model Attempt {
+  id             String @id @default(uuid())
+  versionId      String
+  version        GameVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  shareId        String?
+  share          ShareSession? @relation(fields: [shareId], references: [id], onDelete: SetNull)
+  sessionId      String
+  session        AuthSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  userId         String?
+  user           User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  participantKey String
+  nickname       String
+  startKey       String
+  playContent    Json
+  presentation   Json
+  startedAt      DateTime @default(now())
+  expiresAt      DateTime?
+  completedAt    DateTime?
+  score          Int?
+  total          Int?
+  result         Json?
+  answers        Answer[]
+  @@unique([participantKey, startKey])
+  @@index([versionId, completedAt])
+  @@index([userId, completedAt])
+  @@index([participantKey])
+}
+model Answer {
+  id        String @id @default(uuid())
+  attemptId String
+  attempt   Attempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  taskId    String
+  task      Task @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  supplied  Json
+  correct   Boolean
+  @@unique([attemptId, taskId])
+  @@index([taskId, correct])
+}
+model GenerationJob {
+  id          String @id @default(uuid())
+  userId      String
+  user        User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestKey  String
+  requestHash String
+  state       String @default("RUNNING")
+  mode        String
+  result      Json?
+  errorCode   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@unique([userId, requestKey])
+  @@index([userId, createdAt])
+  @@index([createdAt, mode])
+}

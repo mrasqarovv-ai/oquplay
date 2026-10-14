@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.expo/
+dist/
+generated/
+coverage/
+test-results/
+playwright-report/
+*.log
+*.ipa
+*.apk
+*.aab
+dist-native/

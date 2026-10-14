@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": [
+    "apps/mobile/tests/**/*.ts",
+    "tests/e2e/**/*.ts"
+  ]
+}

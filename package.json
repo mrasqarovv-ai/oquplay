@@ -1,0 +1,41 @@
+{
+  "name": "oquplay-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.13.0 <25"
+  },
+  "scripts": {
+    "dev:api": "npm run dev -w @oquplay/api",
+    "dev:web": "npm run web -w @oquplay/mobile",
+    "dev:mobile": "npm run start -w @oquplay/mobile",
+    "db:generate": "npm run db:generate -w @oquplay/api",
+    "db:migrate": "npm run db:migrate -w @oquplay/api",
+    "typecheck": "npm run typecheck --workspaces --if-present && tsc --noEmit -p tsconfig.tests.json",
+    "test": "npm run test -w @oquplay/api && npm run test:frontend",
+    "build:web": "npm run build:web -w @oquplay/mobile",
+    "test:unit": "npm run test:unit -w @oquplay/api && npm run test:frontend",
+    "test:frontend": "node --import tsx --test apps/mobile/tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "check": "npm run db:generate && npm run typecheck && npm run test:unit",
+    "setup:env": "node scripts/setup-env.mjs",
+    "preview": "node scripts/preview.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^24.0.0",
+    "react-native-reanimated": "4.5.1",
+    "react-native-worklets": "0.10.1",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3"
+  },
+  "overrides": {
+    "react-native-reanimated": "4.5.1",
+    "react-native-worklets": "0.10.1"
+  }
+}
