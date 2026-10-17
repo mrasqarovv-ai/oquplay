@@ -16,7 +16,8 @@ services:
     plan: free
     region: frankfurt
     autoDeploy: false
-    buildCommand: npm ci --include=dev --no-audit --no-fund && npm run db:generate && npm run build:web
+    # This web deployment serves its API on the same origin.
+    buildCommand: npm ci --include=dev --no-audit --no-fund && npm run db:generate && EXPO_PUBLIC_API_URL='' npm run build:web
     # Free services have no pre-deploy job. Migrate before starting the one instance.
     startCommand: >-
       npm run db:migrate &&
@@ -33,8 +34,6 @@ services:
         value: 0.0.0.0
       - key: LLM_MODE
         value: demo
-      - key: EXPO_PUBLIC_API_URL
-        value: ""
       - key: EXPO_NO_TELEMETRY
         value: "1"
       - key: DATABASE_URL
