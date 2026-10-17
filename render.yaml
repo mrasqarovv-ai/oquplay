@@ -1,0 +1,43 @@
+# Demo deployment: the free database expires after 30 days.
+# Review the plans in Render before creating resources.
+databases:
+  - name: oquplay-db
+    plan: free
+    region: frankfurt
+    databaseName: oquplay
+    user: oquplay
+    postgresMajorVersion: "17"
+    ipAllowList: []
+
+services:
+  - type: web
+    name: oquplay
+    runtime: node
+    plan: free
+    region: frankfurt
+    autoDeploy: false
+    buildCommand: npm ci --include=dev --no-audit --no-fund && npm run db:generate && npm run build:web
+    # Free services have no pre-deploy job. Migrate before starting the one instance.
+    startCommand: >-
+      npm run db:migrate &&
+      WEB_ORIGIN="$RENDER_EXTERNAL_URL"
+      STATIC_WEB_DIR=../mobile/dist
+      npm run start --workspace=@oquplay/api
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.19.0
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: LLM_MODE
+        value: demo
+      - key: EXPO_PUBLIC_API_URL
+        value: ""
+      - key: EXPO_NO_TELEMETRY
+        value: "1"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: oquplay-db
+          property: connectionString
