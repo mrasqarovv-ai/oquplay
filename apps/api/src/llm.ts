@@ -4,26 +4,30 @@ import { config } from './config';
 import { AppError } from './errors';
 import { GENERATION_SYSTEM_PROMPT } from './prompts';
 export interface LLMProvider { generate(input: GenerationInput, count: number, repair?: string): Promise<unknown> }
+export async function requestStructured(name: string, schema: Record<string, unknown>, system: string, input: unknown): Promise<unknown> {
+ const url = new URL(config.LLM_BASE_URL);
+ if (url.protocol !== 'https:') throw new AppError('provider_configuration', 500);
+ const response = await fetch(`${config.LLM_BASE_URL.replace(/\/$/, '')}/responses`, {
+  method: 'POST', signal: AbortSignal.timeout(config.LLM_TIMEOUT_MS),
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.LLM_API_KEY}` },
+  body: JSON.stringify({ model: config.LLM_MODEL, store: false, max_output_tokens: config.LLM_MAX_OUTPUT_TOKENS,
+   input: [{ role: 'system', content: system }, { role: 'user', content: JSON.stringify(input) }],
+   text: { format: { type: 'json_schema', name, strict: true, schema } },
+  }),
+ }).catch(() => { throw new AppError('provider_unavailable', 502); });
+ if (!response.ok) throw new AppError(response.status === 429 ? 'provider_rate_limit' : 'provider_unavailable', 502);
+ const envelope = z.object({ status: z.string(), output: z.array(z.object({ content: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional() })) }).safeParse(await response.json().catch(() => null));
+ if (!envelope.success || envelope.data.status !== 'completed') throw new AppError('provider_incomplete', 502);
+ const text = envelope.data.output.flatMap(o => o.content ?? []).filter(c => c.type === 'output_text').map(c => c.text ?? '').join('');
+ try { return JSON.parse(text) as unknown; } catch { return { invalidJSON: true }; }
+}
 export class OpenAIResponsesProvider implements LLMProvider {
  async generate(input: GenerationInput, count: number, repair?: string): Promise<unknown> {
   const game = rawSchemas[input.gameType];
   // Matching regeneration is one pair; the full game is revalidated after merging.
   const schema = z.toJSONSchema(z.strictObject({ status: z.enum(['ok', 'insufficient']), message: z.string(), game: game.extend({ items: game.shape.items.min(1) }).nullable() }), { target: 'draft-7' });
-  const url = new URL(config.LLM_BASE_URL);
-  if (url.protocol !== 'https:') throw new AppError('provider_configuration', 500);
-  const response = await fetch(`${config.LLM_BASE_URL.replace(/\/$/, '')}/responses`, {
-   method: 'POST', signal: AbortSignal.timeout(config.LLM_TIMEOUT_MS),
-   headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.LLM_API_KEY}` },
-   body: JSON.stringify({ model: config.LLM_MODEL, store: false, max_output_tokens: config.LLM_MAX_OUTPUT_TOKENS,
-    input: [{ role: 'system', content: GENERATION_SYSTEM_PROMPT }, { role: 'user', content: JSON.stringify({ parameters: { ...input, source: undefined, count }, untrustedSource: input.source, repairIssues: repair ?? null }) }],
-    text: { format: { type: 'json_schema', name: `oquplay_${input.gameType}_v1`, strict: true, schema } },
-   }),
-  }).catch(() => { throw new AppError('provider_unavailable', 502); });
-  if (!response.ok) throw new AppError(response.status === 429 ? 'provider_rate_limit' : 'provider_unavailable', 502);
-  const envelope = z.object({ status: z.string(), output: z.array(z.object({ content: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional() })) }).safeParse(await response.json());
-  if (!envelope.success || envelope.data.status !== 'completed') throw new AppError('provider_incomplete', 502);
-  const text = envelope.data.output.flatMap(o => o.content ?? []).filter(c => c.type === 'output_text').map(c => c.text ?? '').join('');
-  try { return JSON.parse(text) as unknown; } catch { return { invalidJSON: true }; }
+  return requestStructured(`oquplay_${input.gameType}_v1`, schema, GENERATION_SYSTEM_PROMPT,
+   { parameters: { ...input, source: undefined, count }, untrustedSource: input.source, repairIssues: repair ?? null });
  }
 }
 export async function generateValidated(provider: LLMProvider, input: GenerationInput, count: number = input.count): Promise<GameContent> {

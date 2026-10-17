@@ -5,7 +5,7 @@ import rateLimit from '@fastify/rate-limit';
 import helmet from '@fastify/helmet';
 import staticFiles from '@fastify/static';
 import { hash, compare } from 'bcryptjs';
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { DraftSchema, GameSchema, GenerationSchema, SubmissionSchema, demoGame, demoSource, evidenceIssues, type AttemptResult, type GameContent, type GenerationInput } from '@oquplay/shared';
@@ -17,6 +17,9 @@ import { nativeRequest, newSession, publicUser, requireSession, requireUser, rev
 import { prepareGame, gradeGame } from './gameplay';
 import { generateValidated, OpenAIResponsesProvider, type LLMProvider } from './llm';
 import { replaceGeneratedItem } from './regeneration';
+import { reserveGeneration } from './generationJobs';
+import { OpenAILessonProvider, type LessonProvider } from './lessonGeneration';
+import { registerLessonRoutes } from './lessonRoutes';
 
 const json = (value: unknown) => value as Prisma.InputJsonValue;
 const paramsId = (req: FastifyRequest) => z.object({ id: z.string().uuid() }).parse(req.params).id;
@@ -40,7 +43,7 @@ async function snapshot(tx: Tx, game: Awaited<ReturnType<typeof ownGame>>) {
 }
 const safeGame = (game: { id: string; title: string; subject: string; gameType: string; status: string; archived: boolean; isDemo: boolean; updatedAt: Date }) => ({ id: game.id, title: game.title, subject: game.subject, gameType: game.gameType, status: game.status, archived: game.archived, isDemo: game.isDemo, updatedAt: game.updatedAt });
 
-export async function buildApp(options: { db?: DB; provider?: LLMProvider; mode?: 'demo' | 'live'; testing?: boolean } = {}) {
+export async function buildApp(options: { db?: DB; provider?: LLMProvider; lessonProvider?: LessonProvider; mode?: 'demo' | 'live'; testing?: boolean } = {}) {
  const db = options.db ?? prisma, mode = options.mode ?? config.LLM_MODE, provider = options.provider ?? new OpenAIResponsesProvider();
  const app = Fastify({ logger: options.testing ? false : { level: 'info', redact: ['req.headers.authorization', 'req.headers.cookie', 'res.headers.set-cookie'] }, bodyLimit: 400000, trustProxy: false });
  await app.register(cookie);
@@ -84,23 +87,8 @@ export async function buildApp(options: { db?: DB; provider?: LLMProvider; mode?
   const user = await requireUser(db, req), key = requestKey(req);
   const body = z.strictObject({ settings: GenerationSchema, existing: GameSchema.optional(), replaceItemId: z.string().optional() }).parse(req.body);
   if (!!body.existing !== !!body.replaceItemId || (body.existing && (!body.existing.items.some(i => i.id === body.replaceItemId) || body.existing.gameType !== body.settings.gameType))) throw new AppError('invalid_request', 422);
-  const digest = createHash('sha256').update(JSON.stringify(body)).digest('hex');
-  const reservation = await db.$transaction(async tx => {
-   await tx.$executeRaw`SELECT pg_advisory_xact_lock(7320191)`;
-   const old = await tx.generationJob.findUnique({ where: { userId_requestKey: { userId: user.id, requestKey: key } } });
-   if (old) return { job: old, fresh: false };
-   const since = new Date(Date.now() - 86400000);
-   const [personal, global] = await Promise.all([tx.generationJob.count({ where: { userId: user.id, createdAt: { gte: since } } }), tx.generationJob.count({ where: { mode: 'live', createdAt: { gte: since } } })]);
-   if (personal >= config.GENERATION_DAILY_LIMIT || (mode === 'live' && global >= config.GENERATION_GLOBAL_DAILY_LIMIT)) throw new AppError('generation_limit', 429);
-   return { job: await tx.generationJob.create({ data: { userId: user.id, requestKey: key, requestHash: digest, mode } }), fresh: true };
-  });
-  const { job } = reservation;
-  if (job.requestHash !== digest) throw new AppError('idempotency_conflict', 409);
-  if (!reservation.fresh) {
-   if (job.state === 'COMPLETED') return job.result;
-   if (job.state === 'FAILED') throw new AppError(job.errorCode ?? 'invalid_generation', 422);
-   throw new AppError(Date.now() - job.createdAt.getTime() > 180000 ? 'generation_interrupted' : 'generation_running', 409);
-  }
+  const { job, fresh } = await reserveGeneration(db, user.id, key, JSON.stringify(body), mode);
+  if (!fresh) return job.result;
   try {
    let content: GameContent, source = body.settings.source;
    if (mode === 'demo') {
@@ -117,6 +105,8 @@ export async function buildApp(options: { db?: DB; provider?: LLMProvider; mode?
    await db.generationJob.update({ where: { id: job.id }, data: { state: 'FAILED', errorCode: error instanceof AppError ? error.code : 'invalid_generation' } }); throw error;
   }
  });
+
+ await registerLessonRoutes(app, { db, mode, provider: options.lessonProvider ?? new OpenAILessonProvider(), testing: options.testing });
 
  app.get('/api/games', async req => {
   const user = await requireUser(db, req);

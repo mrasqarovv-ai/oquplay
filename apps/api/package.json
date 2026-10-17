@@ -10,25 +10,27 @@
     "db:migrate": "prisma migrate deploy",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
-    "test:unit": "node --import tsx --test tests/core.test.ts"
+    "test:unit": "node --import tsx --test tests/core.test.ts tests/lesson.test.ts"
   },
   "dependencies": {
-    "@oquplay/shared": "*",
-    "fastify": "5.12.7",
     "@fastify/cookie": "^11.0.0",
     "@fastify/cors": "^11.0.0",
-    "@fastify/rate-limit": "^10.0.0",
     "@fastify/helmet": "^13.0.0",
+    "@fastify/rate-limit": "^10.0.0",
     "@fastify/static": "^8.0.0",
-    "@prisma/client": "7.10.0",
+    "@oquplay/shared": "*",
     "@prisma/adapter-pg": "7.10.0",
-    "pg": "^8.16.0",
+    "@prisma/client": "7.10.0",
     "bcryptjs": "^3.0.0",
     "dotenv": "^17.0.0",
+    "fastify": "5.12.7",
+    "pg": "^8.16.0",
+    "pptxgenjs": "4.0.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "prisma": "7.10.0",
-    "@types/pg": "^8.15.0"
+    "@types/pg": "^8.15.0",
+    "jszip": "3.10.1",
+    "prisma": "7.10.0"
   }
 }

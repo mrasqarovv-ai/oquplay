@@ -25,6 +25,7 @@ model User {
   games        Game[]
   attempts     Attempt[]
   jobs         GenerationJob[]
+  lessons      Lesson[]
 }
 model AuthSession {
   id        String @id @default(uuid())
@@ -55,6 +56,7 @@ model Game {
   updatedAt    DateTime @updatedAt
   versions     GameVersion[]
   shares       ShareSession[]
+  lesson       Lesson?
   @@index([ownerId, archived, updatedAt])
 }
 model GameVersion {
@@ -148,4 +150,14 @@ model GenerationJob {
   @@unique([userId, requestKey])
   @@index([userId, createdAt])
   @@index([createdAt, mode])
+}
+model Lesson {
+  id        String @id @default(uuid())
+  ownerId   String
+  owner     User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  gameId    String @unique
+  game      Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  content   Json
+  createdAt DateTime @default(now())
+  @@index([ownerId, createdAt])
 }
